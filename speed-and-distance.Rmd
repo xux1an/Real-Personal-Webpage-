@@ -1,20 +1,7 @@
 ---
-title: "Untitled"
-knit: (function(input_file, encoding) {
-  out_dir <- 'docs';
-  rmarkdown::render(input_file,
- encoding=encoding,
- output_file=file.path(dirname(input_file), out_dir, 'index.html'))})
-author: "Xuxin Zhang"
-date: "9/2/2020"
-output: html_document
-
+title: "Speed and Distance"
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-
-```
 
 ## R Markdown
 
