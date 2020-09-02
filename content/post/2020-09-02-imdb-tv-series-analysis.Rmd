@@ -1,0 +1,170 @@
+---
+title: IMDb TV series analysis
+author: Xuxin Zhang
+date: '2020-09-02'
+slug: imdb-tv-series-analysis
+categories:
+  - R
+tags:
+  - R Markdown
+  - plot
+---
+## Introduction
+In this project, we will analyze the data about TV series from 1990 to 2018 provided by the Economist. Hopefully, we could illustrate the relationship between different variables and provide the readers with insights about the TV series industry. 
+
+## Data wranggling
+```{r, message=FALSE}
+library(tidyverse)
+library(lubridate)
+library(skimr)
+library(plotly)
+library(ggthemes)
+
+tv<-read.csv(url("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2019/2019-01-08/IMDb_Economist_tv_ratings.csv"))
+```
+
+```{r}
+tv$date<-ymd(tv$date)
+tv%>%head(15)
+```
+
+After getting the data, we notice that for the genres column, most of the TV series have multiple genres. Instead of just picking one of the genres, we use `separate_rows()` to take all of them into consideration. After doing so, we can use the `skim()` function to get a glimpse of the data.
+```{r}
+tv_new<-tv%>%separate_rows(genres,sep = ",")
+skimr::skim(tv_new)
+```
+
+## Exploratory data analysis
+First we will analyze the genres. The following graph shows the number of TV series for each genre in order. We can see that the most popular genres are Drama, Crime, Mystery, and Comedy. 
+```{r}
+tv_new%>%count(genres)%>%
+  ggplot(aes(y = log(n), x = reorder(genres, n)))+
+  geom_col(color = "white", fill = "coral1")+coord_polar()+ theme_minimal()+labs(title = "Genre composition of TV series",x = "genres", y = "log(n)")
+```
+
+After lumping the extra the genres, we can get a similar result with the simplified pie chart. Again, we see that Drama, Crime, Mystery, and Comedy take the majority proportion of the TV series. 
+```{r}
+tv_new%>%
+  mutate(genres = fct_lump(genres,4))%>%
+  count(genres)%>%
+  mutate(prop= n/sum(n))%>%
+  ggplot(aes( x="",y = prop, fill = genres))+
+  geom_bar(stat = "identity")+coord_polar(theta='y')+ theme_minimal()+scale_fill_brewer(palette = "RdBu")+labs(y = "proportion", x= "",title = "Pie Chart for the genre composition of TV series")
+```
+
+To make the pie chart above more complicated, we can include the year variable to show how the genre composition of TV series change over time.
+```{r}
+tv_new%>%mutate(year = as.factor(case_when(between(year(date),1990,1994)~"1990-1994",
+                                 between(year(date),1995,1999)~"1995-1999",
+                                 between(year(date),2000,2004)~"2000-2004",
+                                 between(year(date),2005,2009)~"2005-2009",
+                                 between(year(date),2010,2014)~"2010-2014",
+                                 between(year(date),2015,2018)~"2015-2018")))%>%
+  group_by(year)%>%
+  mutate(genres = fct_lump(genres,4))%>%
+  count(genres,year)%>%
+  group_by(year)%>%
+  mutate(prop= n/sum(n))%>%
+  ggplot(aes( x="",y = prop, fill = genres))+
+  geom_bar(stat = "identity")+coord_polar(theta='y')+ theme_minimal()+scale_fill_brewer(palette = "RdBu")+facet_wrap(~year)+labs(y = "proportion", x ="", title = "Pie Chart for the genre composition of TV series")
+```
+
+From the graph, we see that except for the 1995-1999 time period, Drama, Crime, Comedy, and Mystery always take the lead in production. However, Action and Adventure came in and took the place of Comedy and Mystery genres. 
+
+
+Now let't study the number of seasons for the TV series.
+```{r}
+tv_new%>%group_by(title)%>%transmute(total_season = max(seasonNumber),genres)%>%ggplot(aes(x = total_season, y = reorder(genres,total_season)))+geom_boxplot(fill = "coral1", outlier.alpha = 0.5, alpha=0.6)+scale_x_log10()+ theme_minimal()+labs(x = "number of season",  y = "genres", title = "Distribution of season number for different genres")
+```
+
+Based on this graph, we see that the genres with the top total season are Mystery, Animation, Crime, and Romance, which does comply with our common sense that these genres would last longer than other genres. 
+
+In fact, we can list the names of the top 10 TV series with the highest average season number.
+```{r}
+tv_season<-tv_new%>%group_by(title)%>%
+  summarise(total_season = max(seasonNumber))%>%top_n(11)%>%
+  filter(title!="Law & Order: Special Victims Unit")%>%arrange(desc(total_season))
+
+tv_season
+```
+
+I believe a lot of people have wondered about this question: is it true that the rating of a TV series would go down as the number of season proceed? To answer such question, we will plot the average rating of a TV series against the number of season, and here is what we got. 
+
+```{r}
+tv_new%>%
+  mutate(genres = fct_lump(genres,4))%>%
+  filter(seasonNumber<=20)%>%
+  ggplot(aes(x = seasonNumber, y =  av_rating, color = genres))+geom_point(alpha  = 0.1)+geom_smooth()+scale_color_brewer(palette = "Set2")+facet_wrap(~genres)+labs(x = "number of season", y = "average rating", title ="The relationship between average rating and season number for TV sereies")+ theme_minimal()
+```
+
+As the regression line shows, generally speaking, the rating would first go up and reach the peak around the third and fourth season. Then the rating would begin to go down, which results the perception that the last few seasons of a TV series are not as good as the first several season.
+
+I have picked several popular TV series around that time. From the graph, we can see that the ratings for these TV series do reach the peak around or before season 5, which confirms our discovery. 
+```{r}
+ggplotly(tv%>%filter(title %in% c("Doctor Who","Grey's Anatomy","The Walking Dead","American Horror Story","Law & Order"))%>%ggplot(aes(x = seasonNumber, y = av_rating, color = title))+geom_path(alpha = 1)+scale_color_brewer(palette = "Dark2")+ theme_minimal()+labs(x = "number of season", y = "average rating", title ="Rating change across season for selected TV sereies"))
+```
+
+In addition, with the data at hand, we could easily find out the TV series with the most dramatic change in the rating across season. 
+
+```{r}
+tv_rate_change<-tv_new%>%group_by(title)%>%
+  summarise(rating_change = max(av_rating)-min(av_rating))%>%top_n(10)
+
+tv_rate_change%>%arrange(desc(rating_change))
+```
+
+```{r}
+ggplotly(tv_new%>%filter(title %in% tv_rate_change$title)%>%ggplot(aes(x = seasonNumber, y = av_rating, color = title))+geom_path()+labs(x = "number of season", y = "average rating", title ="Rating change across season for selected TV sereies")+theme_minimal())
+```
+
+Based on the above graph, one would notice that the change of rating is only positive for Third Watch and Criminal Minds. For others, the change is due to the drop in the rating.
+
+Finally, we will focus on the date variable. To study how the rating changes with time, we first create a scatter plot by drawing average rating against date.
+
+```{r}
+tv%>%group_by(date)%>%summarise(ave_rating  = mean(av_rating))%>%ggplot(aes(x = date, y = ave_rating))+geom_point(alpha = 0.1)+geom_path()+labs(x = "date", y = "average rating", title = "How the rating fluctuates over time")+theme_minimal()
+```
+
+After applying a smoothing techinique, the fluctuation shrinks down to a steady increase line. That is to say, the average rating tends to increase gently across time.
+
+```{r}
+tv%>%group_by(date)%>%summarise(ave_rating  = mean(av_rating))%>%ggplot(aes(x = date, y = ave_rating))+geom_point(alpha = 0.1)+geom_smooth()+labs(x = "date", y = "average rating", title = "How the rating fluctuates over time")+theme_minimal()
+```
+
+We can do the same thing to the top 6 genres to see what the pattern for the rating fluctuation is for each of them.
+```{r}
+tv_new_1<-tv_new%>%mutate(genres=fct_lump(genres,5))
+tv_new_1%>%group_by(date,genres)%>%summarise(ave_rating = mean(av_rating))%>%ggplot(aes(x = date, y = ave_rating, color = genres))+geom_path()+facet_wrap(~genres)+labs(x = "date", y = "average rating", title = "How the rating fluctuates for each genres over time")+theme_minimal()
+```
+
+The graphs above have huge fluctuations. In order to balance them out, we need to `group_by()` year instead of day.
+
+```{r}
+ggplotly(tv_new_1%>%mutate(year = year(date))%>%
+  group_by(year,genres)%>%summarise(ave_rating = mean(av_rating))%>%
+  ggplot(aes(x = year, y = ave_rating, color = genres))+geom_path()+labs(x = "date", y = "average rating", title = "How the rating fluctuates over time for each genres")+theme_minimal())
+```
+
+In this way, by smoothing out most of the fluctuations, we see that the Comedy genre reached the rating trough of 6.38 at year 1996. Around the same year, Drama hit the bottom rating of 7.63, while the average rating Mystery and Crime increased to 8.50 and 8.30 respectively. In addition, the average rating of all the genres plumpeted at 2000, which signifies that 2000 is a pretty tough year for the TV series business.
+
+Building upon these finding, we can apply a smoothing to each of the genre to reveal the general trend.
+```{r}
+ggplotly(tv_new_1%>%mutate(year = year(date))%>%
+  group_by(year,genres)%>%summarise(ave_rating = mean(av_rating))%>%
+  ggplot(aes(x = year, y = ave_rating, color = genres))+geom_path(alpha = 0.5)+
+  geom_smooth(se = FALSE)+facet_wrap(~genres)+labs(x = "date", y = "average rating", title = "How the rating fluctuates over time for each genres")+theme_minimal())
+```
+In this graph, we could see that the general trend is that regardless the short-term fluctuations, the rating for all genres tends to increase over time.
+
+## Conclusion
+Based on the analysis in this project, we have several interesting findings:
+
+    1. Drama, Crime, Mystery, and Comedy are the most popular genres of TV series in all these years.
+    
+    2. Mystery, Animation, Crime, and Romance are the top four genres with the longest average season number
+    
+    3. For all kinds of TV series, the rating tends to increase to the peak at around season 4 or 5, then the rating would begin to decline.
+    
+    4. On average, the rating for TV series tends to increase over time, which means that more and more TV series with good quality would be produced across time.  
+
+

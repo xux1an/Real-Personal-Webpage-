@@ -1,5 +1,3 @@
 ---
-title: "index"
+site: blogdown:::blogdown_site
 ---
-
-This is the homepage.
